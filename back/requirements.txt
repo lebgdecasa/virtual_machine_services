@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+requests
+praw
+google-generativeai>=0.8.0
+supabase
+pydantic
+typing-extensions
+markdown
+beautifulsoup4
