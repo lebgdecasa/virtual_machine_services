@@ -10,7 +10,7 @@ function log(...args) {
 // Custom API client
 class CustomSearchAPI {
     baseUrl;
-    constructor(baseUrl = 'http://34.57.8.144') {
+    constructor(baseUrl = 'http://localhost:8003') {
         this.baseUrl = baseUrl;
     }
     async search(query, limit = 5) {
@@ -33,7 +33,7 @@ class CustomSearchAPI {
 // increase this if you have higher API rate limits
 const ConcurrencyLimit = Number(process.env.CUSTOM_API_CONCURRENCY) || 2;
 // Initialize custom search API
-const customSearchAPI = new CustomSearchAPI(process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144');
+const customSearchAPI = new CustomSearchAPI(process.env.CUSTOM_API_BASE_URL || 'http://localhost:8003');
 // take en user query, return a list of SERP queries
 async function generateSerpQueries({ query, numQueries = 4, learnings, }) {
     const res = await generateObject({

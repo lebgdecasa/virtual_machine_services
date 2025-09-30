@@ -30,7 +30,7 @@ type CustomSearchResponse = {
 class CustomSearchAPI {
   private baseUrl: string;
 
-  constructor(baseUrl = 'http://34.57.8.144') {
+  constructor(baseUrl = 'http://localhost:8003') {
     this.baseUrl = baseUrl;
   }
 
@@ -74,7 +74,7 @@ const ConcurrencyLimit = Number(process.env.CUSTOM_API_CONCURRENCY) || 2;
 
 // Initialize custom search API
 const customSearchAPI = new CustomSearchAPI(
-  process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144'
+  process.env.CUSTOM_API_BASE_URL || 'http://localhost:8003'
 );
 
 // take en user query, return a list of SERP queries
