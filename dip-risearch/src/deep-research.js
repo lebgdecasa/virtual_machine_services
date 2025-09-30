@@ -10,7 +10,7 @@ function log(...args) {
 // Custom API client
 class CustomSearchAPI {
     baseUrl;
-    constructor(baseUrl = 'https://watercrawl-981965473376.europe-west1.run.app') {
+    constructor(baseUrl = 'http://34.57.8.144') {
         this.baseUrl = baseUrl;
     }
     async search(query, limit = 5) {
@@ -33,7 +33,7 @@ class CustomSearchAPI {
 // increase this if you have higher API rate limits
 const ConcurrencyLimit = Number(process.env.CUSTOM_API_CONCURRENCY) || 2;
 // Initialize custom search API
-const customSearchAPI = new CustomSearchAPI(process.env.CUSTOM_API_BASE_URL || 'https://watercrawl-981965473376.europe-west1.run.app');
+const customSearchAPI = new CustomSearchAPI(process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144');
 // take en user query, return a list of SERP queries
 async function generateSerpQueries({ query, numQueries = 4, learnings, }) {
     const res = await generateObject({

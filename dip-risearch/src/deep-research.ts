@@ -30,7 +30,7 @@ type CustomSearchResponse = {
 class CustomSearchAPI {
   private baseUrl: string;
 
-  constructor(baseUrl = 'https://watercrawl-981965473376.europe-west1.run.app') {
+  constructor(baseUrl = 'http://34.57.8.144') {
     this.baseUrl = baseUrl;
   }
 
@@ -74,7 +74,7 @@ const ConcurrencyLimit = Number(process.env.CUSTOM_API_CONCURRENCY) || 2;
 
 // Initialize custom search API
 const customSearchAPI = new CustomSearchAPI(
-  process.env.CUSTOM_API_BASE_URL || 'https://watercrawl-981965473376.europe-west1.run.app'
+  process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144'
 );
 
 // take en user query, return a list of SERP queries

@@ -77,7 +77,7 @@ flowchart TB
 ## Requirements
 
 - Node.js environment
-- Custom search API (for web search and content extraction) running on https://watercrawl-981965473376.europe-west1.run.app
+- Custom search API (for web search and content extraction) running on http://34.57.8.144
 - API keys for:
   - OpenAI API (for o3 mini model)
 
