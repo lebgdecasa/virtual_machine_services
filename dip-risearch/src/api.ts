@@ -221,7 +221,7 @@ app.listen(port, () => {
     port,
     environment: process.env.NODE_ENV || 'development',
     concurrencyLimit: process.env.CUSTOM_API_CONCURRENCY || '2',
-    apiBaseUrl: process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144'
+    apiBaseUrl: process.env.CUSTOM_API_BASE_URL || 'http://34.71.161.89'
   });
 });
 

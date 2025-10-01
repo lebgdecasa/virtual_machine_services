@@ -9,7 +9,7 @@ def run_research_api(query: str, breadth: int = 3, depth: int = 3):
     :param depth: How deep the search should go (default: 3).
     :return: Dictionary with answer, learnings, and visited URLs.
     """
-    url = "http://34.57.8.144/api/research"
+    url = "http://34.71.161.89/api/research"
     payload = {
         "query": query,
         "breadth": breadth,
@@ -17,7 +17,7 @@ def run_research_api(query: str, breadth: int = 3, depth: int = 3):
     }
 
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=1000)
         response.raise_for_status()
         data = response.json()
         return data["answer"]
