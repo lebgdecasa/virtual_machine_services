@@ -30,7 +30,7 @@ function askQuestion(query: string): Promise<string> {
 
 // run the agent
 async function run() {
-  console.log('Using model: ', getModel().modelId);
+  console.log('Using model: LanguageModel');
 
   // Get initial query
   const initialQuery = await askQuestion('What would you like to research? ');

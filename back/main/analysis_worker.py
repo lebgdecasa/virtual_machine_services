@@ -145,7 +145,7 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
         '''
 
         print(f"TASK {task_id}: ----> BEFORE gemini_api.generate <----")
-        ## key_trend_prompt = actions.gemini_api.generate(key_trend_prompt_generator)
+        ## key_trend_prompt = back.actions.gemini_api.generate(key_trend_prompt_generator)
         key_trend_prompt = f'''PRODUCT_NAME: {name}
                               PRODUCT_DESCRIPTION: {product_description}
                                 Focus on uncovering:
@@ -156,24 +156,34 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
                                 '''
         print(f"TASK {task_id}: ----> AFTER gemini_api.generate <----")
 
-        print(f"TASK {task_id}: ----> STARTING Deep Research API call in background <----")
+        print(f"TASK {task_id}: ----> BEFORE call_deep_research_api.run_research_api <----")
 
-        # Start Deep Research API call in a separate thread
-        import threading
-        import concurrent.futures
+        report = actions.call_deep_research_api.run_research_api(key_trend_prompt, 6, 4)
 
-        def call_deep_research():
-            try:
-                return actions.call_deep_research_api.run_research_api(key_trend_prompt, 6, 4)
-            except Exception as e:
-                safe_callback(lambda: log_callback(task_id, f"Deep Research API failed: {e}"))
-                return None
+        print(f"TASK {task_id}: ----> AFTER call_deep_research_api.run_research_api <----")
 
-        # Start the Deep Research API call in background
-        executor = concurrent.futures.ThreadPoolExecutor()
-        deep_research_future = executor.submit(call_deep_research)
+        # Add a check to ensure 'report' is not None before parsing
+        if not report:
+            error_message = "Key trends analysis failed and returned no report."
+            safe_callback(lambda: log_callback(task_id, error_message))
+            safe_callback(lambda: update_status_callback(task_id, status="failed", data_key="error", data_value=error_message))
+            return # Stop execution
 
-        safe_callback(lambda: log_callback(task_id, "Deep Research API started in background. Starting ethnography analysis..."))
+        # The 'report' is a string, but parse_pmf_report expects a dict.
+        # We wrap it in the expected format.
+        report_to_json = actions.markdown_to_json.parse_pmf_report({"success": True, "answer": report})
+        #Save key trends report to markdown file
+        # if report:
+        #     key_trends_file_path = os.path.join(task_dir, f"key_trends_report_{task_id}.md")
+        #     try:
+        #         with open(key_trends_file_path, "w", encoding="utf-8") as md_file:
+        #             md_file.write(report)
+        #         safe_callback(lambda: log_callback(task_id, f"Key trends report saved to {key_trends_file_path}"))
+        #     except Exception as e:
+        #         safe_callback(lambda: log_callback(task_id, f"Warning: Could not save key trends report to file: {e}"))
+
+        safe_callback(lambda: log_callback(task_id, "Key Trends Analysis complete."))
+        log_step_time("Key Trends Analysis", step_start)
 
         ## Generate Keywords ##
         safe_callback(lambda: log_callback(task_id, "Starting keywords generation..."))
@@ -213,37 +223,7 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
                                                                                 product_description=product_description)
         safe_callback(lambda: log_callback(task_id, "All Irrelevant posts have been removed."))
 
-        ## Wait for Deep Research API and start Analysis ##
-        safe_callback(lambda: log_callback(task_id, "🔍 Waiting for Deep Research API to complete..."))
-
-        # Wait for Deep Research API result
-        try:
-            report = deep_research_future.result(timeout=1200)  # 10 minute timeout
-            print(f"TASK {task_id}: ----> Deep Research API completed <----")
-
-            if not report:
-                error_message = "Key trends analysis failed and returned no report."
-                safe_callback(lambda: log_callback(task_id, error_message))
-                safe_callback(lambda: update_status_callback(task_id, status="failed", data_key="error", data_value=error_message))
-                return # Stop execution
-
-            # The 'report' is a string, but parse_pmf_report expects a dict.
-            # We wrap it in the expected format.
-            report_to_json = actions.markdown_to_json.parse_pmf_report({"success": True, "answer": report})
-            safe_callback(lambda: log_callback(task_id, "Deep Research API completed successfully!"))
-            log_step_time("Key Trends Analysis", step_start)
-
-        except concurrent.futures.TimeoutError:
-            error_message = "Deep Research API timed out after 10 minutes."
-            safe_callback(lambda: log_callback(task_id, error_message))
-            safe_callback(lambda: update_status_callback(task_id, status="failed", data_key="error", data_value=error_message))
-            return # Stop execution
-        except Exception as e:
-            error_message = f"Deep Research API failed: {e}"
-            safe_callback(lambda: log_callback(task_id, error_message))
-            safe_callback(lambda: update_status_callback(task_id, status="failed", data_key="error", data_value=error_message))
-            return # Stop execution
-
+        ## Analysis ##
         safe_callback(lambda: log_callback(task_id, "🔍 Starting Prompt 1 (Jobs to Be Done)..."))
         safe_callback(lambda: update_status_callback(task_id, status="analyzing_jtbd"))
         jtbd_prompt = f"""You are a netnographic researcher studying user discussions. Here is data containing subreddit posts, comments, and scores, as well as a report. Your task is to discover the primary ‘Jobs to Be Done’ that emerge from this data.

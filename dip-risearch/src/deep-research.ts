@@ -6,8 +6,33 @@ import { z } from 'zod';
 import { getModel, trimPrompt } from './ai/providers';
 import { systemPrompt } from './prompt';
 
-function log(...args: any[]) {
-  console.log(...args);
+// Enhanced logging function for debugging
+function log(level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG', message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  const prefix = `[${timestamp}] [${level}]`;
+
+  if (data !== undefined) {
+    console.log(`${prefix} ${message}`, data);
+  } else {
+    console.log(`${prefix} ${message}`);
+  }
+}
+
+// Convenience logging functions
+function logInfo(message: string, data?: any) {
+  log('INFO', message, data);
+}
+
+function logWarn(message: string, data?: any) {
+  log('WARN', message, data);
+}
+
+function logError(message: string, error?: any) {
+  log('ERROR', message, error);
+}
+
+function logDebug(message: string, data?: any) {
+  log('DEBUG', message, data);
 }
 
 // Custom API response type
@@ -30,27 +55,61 @@ type CustomSearchResponse = {
 class CustomSearchAPI {
   private baseUrl: string;
 
-  constructor(baseUrl = 'http://localhost:8003') {
+  constructor(baseUrl = 'http://34.57.8.144') {
     this.baseUrl = baseUrl;
+    logInfo('CustomSearchAPI initialized', { baseUrl });
   }
 
   async search(query: string, limit: number = 5): Promise<CustomSearchResponse> {
-    const response = await fetch(`${this.baseUrl}/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: [query], // API expects array of queries
-        n: limit,
-      }),
-    });
+    const startTime = Date.now();
+    logInfo('Starting API search request', { query, limit, baseUrl: this.baseUrl });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(`${this.baseUrl}/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: [query], // API expects array of queries
+          n: limit,
+        }),
+      });
+
+      const duration = Date.now() - startTime;
+      logInfo('API search request completed', {
+        query,
+        status: response.status,
+        duration: `${duration}ms`
+      });
+
+      if (!response.ok) {
+        logError('API request failed', {
+          query,
+          status: response.status,
+          statusText: response.statusText,
+          duration: `${duration}ms`
+        });
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      logDebug('API search response received', {
+        query,
+        resultCount: result.results?.length || 0,
+        duration: `${duration}ms`
+      });
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logError('API search request error', {
+        query,
+        error: error instanceof Error ? error.message : String(error),
+        duration: `${duration}ms`
+      });
+      throw error;
     }
-
-    return response.json();
   }
 }
 
@@ -74,7 +133,7 @@ const ConcurrencyLimit = Number(process.env.CUSTOM_API_CONCURRENCY) || 2;
 
 // Initialize custom search API
 const customSearchAPI = new CustomSearchAPI(
-  process.env.CUSTOM_API_BASE_URL || 'http://localhost:8003'
+  process.env.CUSTOM_API_BASE_URL || 'http://34.57.8.144'
 );
 
 // take en user query, return a list of SERP queries
@@ -113,7 +172,10 @@ async function generateSerpQueries({
         .describe(`List of SERP queries, max of ${numQueries}`),
     }),
   });
-  log(`Created ${res.object.queries.length} queries`, res.object.queries);
+  logInfo(`Generated ${res.object.queries.length} SERP queries`, {
+    queryCount: res.object.queries.length,
+    queries: res.object.queries.map(q => ({ query: q.query, researchGoal: q.researchGoal }))
+  });
 
   return res.object.queries.slice(0, numQueries);
 }
@@ -131,30 +193,42 @@ async function processSerpResult({
 }) {
   // Debug log to see the actual structure
   if (result.results && result.results.length > 0) {
-    log(`Sample result structure:`, JSON.stringify(result.results[0], null, 2).slice(0, 500));
+    logDebug(`Sample result structure for query: "${query}"`, {
+      sampleResult: JSON.stringify(result.results[0], null, 2).slice(0, 500),
+      totalResults: result.results.length
+    });
   }
 
   // Extract content from custom API results
   const contents = compact(
-    result.results.map(item => {
+    result.results.map((item, index) => {
       // Use the content field from the custom API
       const content = item.content || item.body || item.title;
 
       if (!content && Object.keys(item).length > 0) {
-        log(`Warning: No content found in item with keys:`, Object.keys(item));
+        logWarn(`No content found in result item ${index} for query: "${query}"`, {
+          itemKeys: Object.keys(item),
+          item: JSON.stringify(item, null, 2).slice(0, 300)
+        });
       }
 
       return content;
     })
   ).map(content => trimPrompt(String(content), 25_000));
 
-  log(`Ran ${query}, found ${contents.length} contents from ${result.results.length} results`);
+  logInfo(`Processed SERP results for query: "${query}"`, {
+    totalResults: result.results.length,
+    extractedContents: contents.length,
+    contentLength: contents.reduce((sum, c) => sum + c.length, 0)
+  });
 
   // If no contents found, try to use URLs for fallback
   if (contents.length === 0 && result.results.length > 0) {
-    log(`No content extracted, attempting to use titles and descriptions as fallback`);
+    logWarn(`No content extracted for query: "${query}", attempting fallback with titles and descriptions`, {
+      totalResults: result.results.length
+    });
     const fallbackContents = compact(
-      result.results.map(item => {
+      result.results.map((item, index) => {
         const title = item.title || '';
         const body = item.body || '';
         const url = item.url || '';
@@ -163,14 +237,19 @@ async function processSerpResult({
     );
 
     if (fallbackContents.length > 0) {
-      log(`Using ${fallbackContents.length} fallback contents`);
+      logInfo(`Using ${fallbackContents.length} fallback contents for query: "${query}"`, {
+        fallbackCount: fallbackContents.length
+      });
       contents.push(...fallbackContents.map(c => trimPrompt(c, 25_000)));
     }
   }
 
   // If still no contents, return empty learnings
   if (contents.length === 0) {
-    log(`Warning: No contents found for query "${query}"`);
+    logWarn(`No contents found for query: "${query}"`, {
+      totalResults: result.results.length,
+      resultSample: result.results.length > 0 ? JSON.stringify(result.results[0], null, 2).slice(0, 300) : 'No results'
+    });
     return {
       learnings: [`Unable to extract content for query: ${query}`],
       followUpQuestions: [`Retry search with different keywords for: ${query}`],
@@ -195,7 +274,13 @@ async function processSerpResult({
         ),
     }),
   });
-  log(`Created ${res.object.learnings.length} learnings`, res.object.learnings);
+  logInfo(`Generated ${res.object.learnings.length} learnings from SERP results`, {
+    query,
+    learningsCount: res.object.learnings.length,
+    followUpQuestionsCount: res.object.followUpQuestions.length,
+    learnings: res.object.learnings,
+    followUpQuestions: res.object.followUpQuestions
+  });
 
   return res.object;
 }
@@ -209,24 +294,63 @@ export async function writeFinalReport({
   learnings: string[];
   visitedUrls: string[];
 }) {
+  const startTime = Date.now();
+  logInfo('Starting final report generation', {
+    prompt,
+    learningsCount: learnings.length,
+    urlsCount: visitedUrls.length
+  });
+
   const learningsString = learnings
     .map(learning => `<learning>\n${learning}\n</learning>`)
     .join('\n');
 
-  const res = await generateObject({
-    model: getModel(),
-    system: systemPrompt(),
-    prompt: trimPrompt(
-      `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n${learningsString}\n</learnings>`,
-    ),
-    schema: z.object({
-      reportMarkdown: z.string().describe('Final report on the topic in Markdown'),
-    }),
+  logDebug('Generating report with AI model', {
+    learningsStringLength: learningsString.length,
+    model: 'LanguageModel'
   });
 
-  // Append the visited URLs section to the report
-  const urlsSection = `\n\n## Sources\n\n${visitedUrls.map(url => `- ${url}`).join('\n')}`;
-  return res.object.reportMarkdown + urlsSection;
+  try {
+    const res = await generateObject({
+      model: getModel(),
+      system: systemPrompt(),
+      prompt: trimPrompt(
+        `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as as detailed as possible, aim for 3 or more pages, include ALL the learnings from research:\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from previous research:\n\n<learnings>\n${learningsString}\n</learnings>`,
+      ),
+      schema: z.object({
+        reportMarkdown: z.string().describe('Final report on the topic in Markdown'),
+      }),
+    });
+
+    const duration = Date.now() - startTime;
+    const reportLength = res.object.reportMarkdown.length;
+
+    logInfo('Final report generated successfully', {
+      duration: `${duration}ms`,
+      reportLength,
+      urlsIncluded: visitedUrls.length
+    });
+
+    // Append the visited URLs section to the report
+    const urlsSection = `\n\n## Sources\n\n${visitedUrls.map(url => `- ${url}`).join('\n')}`;
+    const finalReport = res.object.reportMarkdown + urlsSection;
+
+    logDebug('Report generation completed', {
+      finalReportLength: finalReport.length,
+      urlsSectionLength: urlsSection.length
+    });
+
+    return finalReport;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logError('Error generating final report', {
+      prompt,
+      error: error instanceof Error ? error.message : String(error),
+      duration: `${duration}ms`,
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    throw error;
+  }
 }
 
 export async function writeFinalAnswer({
@@ -236,24 +360,55 @@ export async function writeFinalAnswer({
   prompt: string;
   learnings: string[];
 }) {
+  const startTime = Date.now();
+  logInfo('Starting final answer generation', {
+    prompt,
+    learningsCount: learnings.length
+  });
+
   const learningsString = learnings
     .map(learning => `<learning>\n${learning}\n</learning>`)
     .join('\n');
 
-  const res = await generateObject({
-    model: getModel(),
-    system: systemPrompt(),
-    prompt: trimPrompt(
-      `Given the following prompt from the user, write a final answer on the topic using the learnings from research. Follow the format specified in the prompt. Do not yap or babble or include any other text than the answer besides the format specified in the prompt. Keep the answer as concise as possible - usually it should be just a few words or maximum a sentence. Try to follow the format specified in the prompt (for example, if the prompt is using Latex, the answer should be in Latex. If the prompt gives multiple answer choices, the answer should be one of the choices).\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from research on the topic that you can use to help answer the prompt:\n\n<learnings>\n${learningsString}\n</learnings>`,
-    ),
-    schema: z.object({
-      exactAnswer: z
-        .string()
-        .describe('The final answer, make it short and concise, just the answer, no other text'),
-    }),
+  logDebug('Generating answer with AI model', {
+    learningsStringLength: learningsString.length,
+    model: 'LanguageModel'
   });
 
-  return res.object.exactAnswer;
+  try {
+    const res = await generateObject({
+      model: getModel(),
+      system: systemPrompt(),
+      prompt: trimPrompt(
+        `Given the following prompt from the user, write a final answer on the topic using the learnings from research. Follow the format specified in the prompt. Do not yap or babble or include any other text than the answer besides the format specified in the prompt. Keep the answer as concise as possible - usually it should be just a few words or maximum a sentence. Try to follow the format specified in the prompt (for example, if the prompt is using Latex, the answer should be in Latex. If the prompt gives multiple answer choices, the answer should be one of the choices).\n\n<prompt>${prompt}</prompt>\n\nHere are all the learnings from research on the topic that you can use to help answer the prompt:\n\n<learnings>\n${learningsString}\n</learnings>`,
+      ),
+      schema: z.object({
+        exactAnswer: z
+          .string()
+          .describe('The final answer, make it short and concise, just the answer, no other text'),
+      }),
+    });
+
+    const duration = Date.now() - startTime;
+    const answerLength = res.object.exactAnswer.length;
+
+    logInfo('Final answer generated successfully', {
+      duration: `${duration}ms`,
+      answerLength,
+      answerPreview: res.object.exactAnswer.slice(0, 100) + (res.object.exactAnswer.length > 100 ? '...' : '')
+    });
+
+    return res.object.exactAnswer;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logError('Error generating final answer', {
+      prompt,
+      error: error instanceof Error ? error.message : String(error),
+      duration: `${duration}ms`,
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    throw error;
+  }
 }
 
 export async function deepResearch({
@@ -271,6 +426,15 @@ export async function deepResearch({
   visitedUrls?: string[];
   onProgress?: (progress: ResearchProgress) => void;
 }): Promise<ResearchResult> {
+  const startTime = Date.now();
+  logInfo('Starting deep research', {
+    query,
+    breadth,
+    depth,
+    existingLearningsCount: learnings.length,
+    existingUrlsCount: visitedUrls.length
+  });
+
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -282,13 +446,21 @@ export async function deepResearch({
 
   const reportProgress = (update: Partial<ResearchProgress>) => {
     Object.assign(progress, update);
+    logDebug('Research progress update', { progress: { ...progress, ...update } });
     onProgress?.(progress);
   };
 
+  logInfo('Generating SERP queries', { query, breadth });
   const serpQueries = await generateSerpQueries({
     query,
     learnings,
     numQueries: breadth,
+  });
+
+  logInfo('SERP queries generated', {
+    query,
+    queriesCount: serpQueries.length,
+    queries: serpQueries.map(q => q.query)
   });
 
   reportProgress({
@@ -298,20 +470,42 @@ export async function deepResearch({
 
   const limit = pLimit(ConcurrencyLimit);
 
-  const results = await Promise.all(
-    serpQueries.map(serpQuery =>
-      limit(async () => {
-        try {
-          log(`Searching for: "${serpQuery.query}"`);
+  logInfo('Starting parallel search execution', {
+    query,
+    concurrencyLimit: ConcurrencyLimit,
+    queriesCount: serpQueries.length
+  });
 
+  const results = await Promise.all(
+    serpQueries.map((serpQuery, index) =>
+      limit(async () => {
+        const queryStartTime = Date.now();
+        logInfo(`Executing search ${index + 1}/${serpQueries.length}`, {
+          query: serpQuery.query,
+          researchGoal: serpQuery.researchGoal
+        });
+
+        try {
           const result = await customSearchAPI.search(serpQuery.query, 5);
 
-          log(`Search completed for "${serpQuery.query}", got ${result.results?.length || 0} results`);
+          const queryDuration = Date.now() - queryStartTime;
+          logInfo(`Search completed for query ${index + 1}`, {
+            query: serpQuery.query,
+            resultsCount: result.results?.length || 0,
+            duration: `${queryDuration}ms`
+          });
 
           // Collect URLs from this search
           const newUrls = compact(result.results.map(item => item.url));
           const newBreadth = Math.ceil(breadth / 2);
           const newDepth = depth - 1;
+
+          logDebug('Processing SERP results', {
+            query: serpQuery.query,
+            newUrlsCount: newUrls.length,
+            newBreadth,
+            newDepth
+          });
 
           const newLearnings = await processSerpResult({
             query: serpQuery.query,
@@ -322,7 +516,13 @@ export async function deepResearch({
           const allUrls = [...visitedUrls, ...newUrls];
 
           if (newDepth > 0) {
-            log(`Researching deeper, breadth: ${newBreadth}, depth: ${newDepth}`);
+            logInfo(`Researching deeper for query ${index + 1}`, {
+              query: serpQuery.query,
+              newBreadth,
+              newDepth,
+              newLearningsCount: newLearnings.learnings.length,
+              followUpQuestionsCount: newLearnings.followUpQuestions.length
+            });
 
             reportProgress({
               currentDepth: newDepth,
@@ -336,6 +536,12 @@ export async function deepResearch({
             Follow-up research directions: ${newLearnings.followUpQuestions.map(q => `\n${q}`).join('')}
           `.trim();
 
+            logDebug('Recursive research call', {
+              nextQuery: nextQuery.slice(0, 200) + '...',
+              newBreadth,
+              newDepth
+            });
+
             return deepResearch({
               query: nextQuery,
               breadth: newBreadth,
@@ -345,6 +551,12 @@ export async function deepResearch({
               onProgress,
             });
           } else {
+            logInfo(`Reached maximum depth for query ${index + 1}`, {
+              query: serpQuery.query,
+              finalLearningsCount: allLearnings.length,
+              finalUrlsCount: allUrls.length
+            });
+
             reportProgress({
               currentDepth: 0,
               completedQueries: progress.completedQueries + 1,
@@ -356,10 +568,21 @@ export async function deepResearch({
             };
           }
         } catch (e: any) {
+          const queryDuration = Date.now() - queryStartTime;
           if (e.message && e.message.includes('Timeout')) {
-            log(`Timeout error running query: ${serpQuery.query}: `, e);
+            logError(`Timeout error for query ${index + 1}`, {
+              query: serpQuery.query,
+              error: e.message,
+              duration: `${queryDuration}ms`,
+              stack: e.stack
+            });
           } else {
-            log(`Error running query: ${serpQuery.query}: `, e);
+            logError(`Error executing query ${index + 1}`, {
+              query: serpQuery.query,
+              error: e.message,
+              duration: `${queryDuration}ms`,
+              stack: e.stack
+            });
           }
           return {
             learnings: [],
@@ -370,8 +593,20 @@ export async function deepResearch({
     ),
   );
 
+  const finalLearnings = [...new Set(results.flatMap(r => r.learnings))];
+  const finalUrls = [...new Set(results.flatMap(r => r.visitedUrls))];
+  const totalDuration = Date.now() - startTime;
+
+  logInfo('Deep research completed', {
+    query,
+    totalDuration: `${totalDuration}ms`,
+    finalLearningsCount: finalLearnings.length,
+    finalUrlsCount: finalUrls.length,
+    queriesExecuted: results.length
+  });
+
   return {
-    learnings: [...new Set(results.flatMap(r => r.learnings))],
-    visitedUrls: [...new Set(results.flatMap(r => r.visitedUrls))],
+    learnings: finalLearnings,
+    visitedUrls: finalUrls,
   };
 }
