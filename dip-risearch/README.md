@@ -77,7 +77,7 @@ flowchart TB
 ## Requirements
 
 - Node.js environment
-- Custom search API (for web search and content extraction) running on http://34.71.161.89
+- Custom search API (for web search and content extraction) running on http://34.30.168.182
 - API keys for:
   - OpenAI API (for o3 mini model)
 
