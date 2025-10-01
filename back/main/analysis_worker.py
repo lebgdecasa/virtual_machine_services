@@ -251,13 +251,13 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
 
         logger.info("Starting deep research API call", {
             'prompt_length': len(key_trend_prompt),
-            'breadth': 6,
-            'depth': 4
+            'breadth': 3,
+            'depth': 3
         })
 
         print(f"TASK {task_id}: ----> BEFORE call_deep_research_api.run_research_api <----")
 
-        report = actions.call_deep_research_api.run_research_api(key_trend_prompt, 6, 4)
+        report = actions.call_deep_research_api.run_research_api(key_trend_prompt, 3, 3)
 
         print(f"TASK {task_id}: ----> AFTER call_deep_research_api.run_research_api <----")
 

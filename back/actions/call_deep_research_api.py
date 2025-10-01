@@ -30,7 +30,7 @@ def run_research_api(query: str, breadth: int = 3, depth: int = 3) -> Optional[s
 
     try:
         # Calculate timeout based on complexity
-        timeout = max(300, 60 * breadth * depth)  # At least 5 min, or 60s per breadth*depth
+        timeout = max(300, 120 * breadth * depth)  # At least 5 min, or 60s per breadth*depth
         print(f"[INFO] Using timeout of {timeout} seconds ({timeout//60} minutes)")
 
         # Build curl command with all necessary flags
