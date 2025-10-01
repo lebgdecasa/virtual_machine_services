@@ -276,7 +276,19 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
         # The 'report' is a string, but parse_pmf_report expects a dict.
         # We wrap it in the expected format.
         logger.debug("Parsing key trends report to JSON format")
-        report_to_json = actions.markdown_to_json.parse_pmf_report({"success": True, "answer": report})
+        try:
+            report_to_json = actions.markdown_to_json.parse_pmf_report({"success": True, "answer": report})
+            logger.info("Key trends JSON parsing completed", {
+                'parsed_keys': list(report_to_json.keys()) if report_to_json else [],
+                'has_overview': bool(report_to_json.get('overview')) if report_to_json else False,
+                'overview_length': len(report_to_json.get('overview', [])) if report_to_json else 0
+            })
+        except Exception as e:
+            logger.error("Failed to parse key trends report to JSON", e, {
+                'report_length': len(report) if report else 0,
+                'report_preview': report[:200] + '...' if report and len(report) > 200 else report
+            })
+            report_to_json = {"error": "Failed to parse key trends report"}
         #Save key trends report to markdown file
         # if report:
         #     key_trends_file_path = os.path.join(task_dir, f"key_trends_report_{task_id}.md")
@@ -676,7 +688,19 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
         })
 
         logger.debug("Parsing final analysis to JSON format")
-        final_analysis_result_json = actions.markdown_to_json.parse_final_analysis(final_analysis_result)
+        try:
+            final_analysis_result_json = actions.markdown_to_json.parse_final_analysis(final_analysis_result)
+            logger.info("Final analysis JSON parsing completed", {
+                'has_title': bool(final_analysis_result_json.get('title')) if final_analysis_result_json else False,
+                'sections_count': len(final_analysis_result_json.get('sections', [])) if final_analysis_result_json else 0,
+                'first_section_title': final_analysis_result_json.get('sections', [{}])[0].get('heading', 'None') if final_analysis_result_json and final_analysis_result_json.get('sections') else 'None'
+            })
+        except Exception as e:
+            logger.error("Failed to parse final analysis to JSON", e, {
+                'analysis_length': len(final_analysis_result) if final_analysis_result else 0,
+                'analysis_preview': final_analysis_result[:200] + '...' if final_analysis_result and len(final_analysis_result) > 200 else final_analysis_result
+            })
+            final_analysis_result_json = {"error": "Failed to parse final analysis"}
 
         if final_analysis_result is not None:
             # Save the result to the task state
@@ -808,15 +832,32 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
 
         logger.info("Saving analysis results to Supabase database")
         try:
-            supabase.table("projects").update({
+            # Prepare analysis data with both raw markdown and parsed JSON
+            analysis_data = {
                 "overview": product_overview_json,
                 "analysis": {
-                    "key_trends": report_to_json,
-                    "final": final_analysis_result_json
+                    "key_trends": {
+                        "raw_markdown": report,
+                        "parsed_json": report_to_json
+                    },
+                    "final": {
+                        "raw_markdown": final_analysis_result,
+                        "parsed_json": final_analysis_result_json
+                    }
                 },
                 "status": "personas_ready",
                 "locked": False
-            }).eq("id", project_id).execute()
+            }
+
+            logger.info("Database update payload prepared", {
+                'has_overview': product_overview_json is not None,
+                'key_trends_raw_length': len(report) if report else 0,
+                'key_trends_parsed_keys': list(report_to_json.keys()) if report_to_json else [],
+                'final_raw_length': len(final_analysis_result) if final_analysis_result else 0,
+                'final_parsed_sections': len(final_analysis_result_json.get('sections', [])) if final_analysis_result_json else 0
+            })
+
+            supabase.table("projects").update(analysis_data).eq("id", project_id).execute()
 
             logger.debug("Project data updated in Supabase")
 
