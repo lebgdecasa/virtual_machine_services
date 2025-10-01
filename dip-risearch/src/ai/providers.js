@@ -35,7 +35,7 @@ const googleProvider = process.env.GEMINI_KEY
     })
     : undefined;
 // Google Gemini model
-const geminiFlashModel = googleProvider?.('gemini-2.5-flash');
+const geminiFlashModel = googleProvider?.('gemini-2.0-flash');
 // Custom model configuration
 const customModel = process.env.CUSTOM_MODEL && openai
     ? openai(process.env.CUSTOM_MODEL, {

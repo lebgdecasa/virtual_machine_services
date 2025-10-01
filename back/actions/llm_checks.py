@@ -93,7 +93,7 @@ Required output format: A JSON array of objects like the examples above.
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        model = genai.GenerativeModel('gemini-2.0-flash-lite')
     except Exception as e:
         log.error(f"Failed to initialize Gemini client: {e}")
         return results

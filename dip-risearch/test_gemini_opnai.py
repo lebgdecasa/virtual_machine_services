@@ -8,7 +8,7 @@ client = OpenAI(
 
 # Use the chat completions endpoint as you would with OpenAI
 response = client.chat.completions.create(
-  model="gemini-2.5-flash", # Specify the Gemini model
+  model="gemini-2.0-flash", # Specify the Gemini model
   messages=[
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Explain how a large language model works."}
