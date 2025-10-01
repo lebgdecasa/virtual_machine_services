@@ -301,7 +301,7 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
 
         logger.info("Keywords generated successfully", {
             'keywords': query,
-            'keywords_count': len(query.split()) if query else 0
+            'keywords_count': len(query) if query else 0
         })
         safe_callback(lambda: log_callback(task_id, f"Generated keywords: {query}"))
 
