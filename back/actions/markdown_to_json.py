@@ -80,56 +80,61 @@ def parse_markdown_to_json(markdown_text: str):
 
 def parse_final_analysis(md_text: str) -> Dict:
     """
-    Parse the numbered-list style ‘final analysis’ Markdown into JSON.
-
-    Expected pattern:
-    # Title
-    1. **Section-Heading**: optional intro…
-       * bullet
-       * bullet
-    2. **Next-Heading**:
-       ...
+    Parse the final analysis markdown into JSON format.
+    Handles markdown headers like # 1. Section Name
     """
     if not md_text:
         return {"title": "", "sections": []}
-    html = markdown.markdown(md_text, extensions=["extra"])
-    soup = BeautifulSoup(html, "html.parser")
+
+    # Split by markdown headers (lines starting with # followed by number)
+    sections = re.split(r'\n(?=#+ \d+\.)', md_text.strip())
 
     out: Dict = {"title": "", "sections": []}
 
-    # pull the first <h1> as title (if any)
-    h1 = soup.find("h1")
-    if h1:
-        out["title"] = h1.text.strip()
+    for section in sections:
+        if not section.strip():
+            continue
 
-    # root-level <ol> → each <li> becomes a section
-    for li in soup.find_all("ol", recursive=False):
-        for item in li.find_all("li", recursive=False):
-            sec = {"heading": "", "content": "", "bullets": []}
+        lines = section.strip().split('\n')
+        first_line = lines[0].strip()
 
-            # grab the bold heading  (**Heading**:)
-            strong = item.find("strong")
-            if strong:
-                sec["heading"] = strong.text.strip()
-                # everything after </strong> up to first <ul/ol> is paragraph-like content
-                # remove the bold part & optional colon
-                raw = re.sub(r"^<strong>.*?</strong>\s*:?","", item.decode_contents(), flags=re.S)
-                chunk = BeautifulSoup(raw, "html.parser")
-                # first <p> becomes 'content'
-                first_p = chunk.find("p")
-                if first_p:
-                    sec["content"] = first_p.text.strip()
-                    first_p.decompose()
-                # any nested list items become bullets
-                for sublist in chunk.find_all(["ul","ol"]):
-                    sec["bullets"].extend([li.text.strip() for li in sublist.find_all("li")])
-            else:
-                # fall-back: treat whole <li> as bullet of previous section if no bold header
-                if out["sections"]:
-                    out["sections"][-1]["bullets"].append(item.text.strip())
-                continue
+        # Handle main title (first header)
+        if first_line.startswith('# ') and not out["title"]:
+            out["title"] = first_line.replace('# ', '').strip()
+            continue
 
-            out["sections"].append(sec)
+        # Handle section headers (# 1. Section Name or ## 1.1 Subsection)
+        if re.match(r'^#{1,3} \d+\.?\d*\s+', first_line):
+            # Extract the section number and title
+            header_match = re.match(r'^(#{1,3}) (\d+\.?\d*)\s+(.*)', first_line)
+            if header_match:
+                level = len(header_match.group(1))  # Number of # symbols
+                section_num = header_match.group(2)
+                section_title = header_match.group(3)
+
+                # Get content after the header
+                content_lines = [line.strip() for line in lines[1:] if line.strip()]
+                content = '\n'.join(content_lines)
+
+                # Extract bullets (lines starting with *)
+                bullets = []
+                remaining_content = []
+                for line in content_lines:
+                    if line.startswith('* ') or line.startswith('- '):
+                        bullets.append(line[2:].strip())  # Remove the * or -
+                    else:
+                        remaining_content.append(line)
+
+                content = '\n'.join(remaining_content).strip()
+
+                section_data = {
+                    "heading": section_title,
+                    "content": content,
+                    "bullets": bullets,
+                    "subsections": []
+                }
+
+                out["sections"].append(section_data)
 
     return out
 
@@ -138,63 +143,106 @@ def parse_pmf_report(response: Dict) -> Optional[Dict[str, any]]:
         return None
 
     text = response["answer"]
-    # Split sections based on Markdown headers like "### 1. Overview" or "## Sources"
-    sections = re.split(r"^(?:###|##)\s+", text, flags=re.MULTILINE)
+    # Split sections based on Markdown headers like "### 1. Overview"
+    sections = re.split(r'\n(?=### \d+\.)', text.strip())
 
-    def parse_subsection(content: str) -> List[Dict]:
-        """Parses a section's content into a list of subsections."""
-        html = markdown.markdown(content, extensions=['extra'])
-        soup = BeautifulSoup(html, 'html.parser')
+    def parse_section_content(content: str) -> List[Dict]:
+        """Parses section content, handling different markdown structures."""
         subsections = []
 
-        list_tag = soup.find('ul') or soup.find('ol')
-        if not list_tag:
-            if soup.text.strip():
-                return [{'content': soup.text.strip()}]
-            return []
+        # Split by bold subheadings or bullet points
+        parts = re.split(r'\n(?=\*\*.*?:\*\*|\*\*.*?\*\*|- \*\*)', content.strip())
 
-        for item in list_tag.find_all("li", recursive=False):
-            sub = {}
-            strong = item.find("strong")
-            if strong:
-                sub["subheading"] = strong.text.strip().replace(":", "")
-                strong.decompose()
+        subheading = None
 
-            nested_list = item.find("ul") or item.find("ol")
-            if nested_list:
-                sub["bullets"] = [li.text.strip() for li in nested_list.find_all("li")]
-                nested_list.decompose()
+        for part in parts:
+            if not part.strip():
+                continue
 
-            content_text = item.text.strip()
+            # Check if this is a subheading (bold text)
+            subheading_match = re.match(r'^\*\*(.*?)\*\*:?$', part.strip())
+            if subheading_match:
+                # This is a subheading, save it for the next content section
+                subheading = subheading_match.group(1).strip()
+                continue
+
+            # Parse content as either bullet points or regular text
+            lines = [line.strip() for line in part.split('\n') if line.strip()]
+
+            current_content = []
+            bullets = []
+
+            for line in lines:
+                if line.startswith('- '):
+                    # This is a bullet point
+                    bullets.append(line[2:].strip())
+                elif line.startswith('* '):
+                    bullets.append(line[2:].strip())
+                else:
+                    current_content.append(line)
+
+            content_text = '\n'.join(current_content).strip()
+
+            subsection = {}
+            if subheading:
+                subsection["subheading"] = subheading
+                subheading = None  # Reset for next section
             if content_text:
-                sub['content'] = content_text
+                subsection["content"] = content_text
+            if bullets:
+                subsection["bullets"] = bullets
 
-            if sub:
-                subsections.append(sub)
+            if subsection:
+                subsections.append(subsection)
 
         return subsections
 
-
-    def extract_section(title: str, parse_subsections: bool = True) -> any:
-        for section in sections:
-            if section.strip().lower().startswith(title.lower()):
-                lines = section.strip().split("\n", 1)
-                content = lines[1].strip() if len(lines) > 1 else ""
-                if parse_subsections:
-                    return parse_subsection(content)
-                return content
-        return "" if not parse_subsections else []
-
     result = {
-        "overview": extract_section("1. Overview"),
-        "emerging_trends": extract_section("2. Emerging Trends"),
-        "market_conditions": extract_section("3. Market Conditions"),
-        "competitive_benchmarks": extract_section("4. Competitive Benchmarks and Industry Comparison"),
-        "user_workarounds": extract_section("5. Current User Workarounds & Substitutes"),
-        "go_to_market": extract_section("6. Go-to-Market Landscape & Channel Fit"),
-        "validation_signals": extract_section("7. Key Validation Signals"),
-        "recommendations": extract_section("8. Recommendations"),
+        "overview": [],
+        "emerging_trends": [],
+        "market_conditions": [],
+        "competitive_benchmarks": [],
+        "user_workarounds": [],
+        "go_to_market": [],
+        "validation_signals": [],
+        "recommendations": []
     }
+
+    # Process each section
+    for section in sections:
+        if not section.strip():
+            continue
+
+        lines = section.strip().split('\n')
+        header_line = lines[0].strip()
+
+        # Extract section number and title
+        header_match = re.match(r'### (\d+)\.\s+(.*)', header_line)
+        if not header_match:
+            continue
+
+        section_num = int(header_match.group(1))
+        section_title = header_match.group(2).strip()
+
+        # Get content after header
+        content = '\n'.join(lines[1:]).strip()
+
+        if content:
+            parsed_content = parse_section_content(content)
+            # Map section numbers to result keys
+            section_map = {
+                1: "overview",
+                2: "emerging_trends",
+                3: "market_conditions",
+                4: "competitive_benchmarks",
+                5: "user_workarounds",
+                6: "go_to_market",
+                7: "validation_signals",
+                8: "recommendations"
+            }
+
+            if section_num in section_map:
+                result[section_map[section_num]] = parsed_content
 
     return result
 
