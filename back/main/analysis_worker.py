@@ -251,13 +251,13 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
 
         logger.info("Starting deep research API call", {
             'prompt_length': len(key_trend_prompt),
-            'breadth': 3,
+            'breadth': 4,
             'depth': 3
         })
 
         print(f"TASK {task_id}: ----> BEFORE call_deep_research_api.run_research_api <----")
 
-        report = actions.call_deep_research_api.run_research_api(key_trend_prompt, 3, 3)
+        report = actions.call_deep_research_api.run_research_api(key_trend_prompt, 4, 3)
 
         print(f"TASK {task_id}: ----> AFTER call_deep_research_api.run_research_api <----")
 
@@ -345,7 +345,7 @@ def run_analysis_job(product_description: str, task_id: str, project_id: str, na
         step_start = time.time()
         logger.info("Starting subreddit scraping", {
             'subreddits_to_scrape': len(filtered),
-            'posts_per_subreddit': 4
+            'posts_per_subreddit': 10
         })
         safe_callback(lambda: log_callback(task_id, "Starting Scraping..."))
         safe_callback(lambda: update_status_callback(task_id, status="scraping_subreddits"))
