@@ -81,13 +81,14 @@ def parse_markdown_to_json(markdown_text: str):
 def parse_final_analysis(md_text: str) -> Dict:
     """
     Parse the final analysis markdown into JSON format.
-    Handles markdown headers like # 1. Section Name
+    Handles markdown headers like # Introduction, # Jobs to Be Done, etc.
     """
     if not md_text:
         return {"title": "", "sections": []}
 
-    # Split by markdown headers (lines starting with # followed by number)
-    sections = re.split(r'\n(?=#+ \d+\.)', md_text.strip())
+    # Split by markdown headers (lines starting with # not followed by number for title,
+    # or # followed by space and title for sections)
+    sections = re.split(r'\n(?=# )', md_text.strip())
 
     out: Dict = {"title": "", "sections": []}
 
@@ -98,19 +99,18 @@ def parse_final_analysis(md_text: str) -> Dict:
         lines = section.strip().split('\n')
         first_line = lines[0].strip()
 
-        # Handle main title (first header)
+        # Handle main title (first header without number)
         if first_line.startswith('# ') and not out["title"]:
-            out["title"] = first_line.replace('# ', '').strip()
+            title_match = re.match(r'^# (.+)', first_line)
+            if title_match:
+                out["title"] = title_match.group(1).strip()
             continue
 
-        # Handle section headers (# 1. Section Name or ## 1.1 Subsection)
-        if re.match(r'^#{1,3} \d+\.?\d*\s+', first_line):
-            # Extract the section number and title
-            header_match = re.match(r'^(#{1,3}) (\d+\.?\d*)\s+(.*)', first_line)
-            if header_match:
-                level = len(header_match.group(1))  # Number of # symbols
-                section_num = header_match.group(2)
-                section_title = header_match.group(3)
+        # Handle section headers (# Section Name)
+        if first_line.startswith('# ') and out["title"]:  # Only process sections after title
+            section_match = re.match(r'^# (.+)', first_line)
+            if section_match:
+                section_title = section_match.group(1).strip()
 
                 # Get content after the header
                 content_lines = [line.strip() for line in lines[1:] if line.strip()]
@@ -143,8 +143,8 @@ def parse_pmf_report(response: Dict) -> Optional[Dict[str, any]]:
         return None
 
     text = response["answer"]
-    # Split sections based on Markdown headers like "### 1. Overview"
-    sections = re.split(r'\n(?=### \d+\.)', text.strip())
+    # Split sections based on Markdown headers like "# 1. Overview"
+    sections = re.split(r'\n(?=# \d+\.)', text.strip())
 
     def parse_section_content(content: str) -> List[Dict]:
         """Parses section content, handling different markdown structures."""
@@ -216,8 +216,8 @@ def parse_pmf_report(response: Dict) -> Optional[Dict[str, any]]:
         lines = section.strip().split('\n')
         header_line = lines[0].strip()
 
-        # Extract section number and title
-        header_match = re.match(r'### (\d+)\.\s+(.*)', header_line)
+        # Extract section number and title - handle both "# 1. Title" and "### 1. Title"
+        header_match = re.match(r'#{1,3} (\d+)\.\s+(.*)', header_line)
         if not header_match:
             continue
 
